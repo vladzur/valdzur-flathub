@@ -15,7 +15,8 @@ GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | grep sec | awk '{print
 echo "GPG Key ID: $GPG_KEY_ID"
 
 # Exportar clave pública (para distribuir a usuarios)
-gpg --export --armor "$GPG_KEY_ID" > docs/repo-key.gpg
+# El workflow la exporta automáticamente a repo/ para que Firebase la sirva
+gpg --export --armor "$GPG_KEY_ID" > repo/repo-key.gpg
 
 # Exportar clave privada (para GitHub Secrets)
 gpg --export-secret-keys --armor "$GPG_KEY_ID" > /tmp/gpg-private.key
