@@ -104,6 +104,7 @@ jobs:
       # Paso 5: Descargar el archivo .flatpak
       # -------------------------------------------------------------------
       - name: Descargar archivo .flatpak
+        id: download
         env:
           DOWNLOAD_URL: ${{ steps.params.outputs.download_url }}
           APP_ID: ${{ steps.params.outputs.app_id }}
@@ -131,7 +132,7 @@ jobs:
         env:
           APP_ID: ${{ steps.params.outputs.app_id }}
         run: |
-          bash scripts/import-flatpak.sh "${{ steps.params.outputs.flatpak_file }}" "$APP_ID"
+          bash scripts/import-flatpak.sh "${{ steps.download.outputs.flatpak_file }}" "$APP_ID"
 
       # -------------------------------------------------------------------
       # Paso 7: Copiar metadatos AppStream (si existen)
