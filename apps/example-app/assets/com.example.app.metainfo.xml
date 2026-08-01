@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Archivo de metadatos AppStream de ejemplo.
+  Copia este archivo como base para tu aplicación y reemplaza los valores.
+-->
+<component type="desktop-application">
+  <id>com.example.app</id>
+  <name>Example App</name>
+  <summary>Una aplicación de ejemplo para el repositorio Flatpak</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <description>
+    <p>
+      Esta es una aplicación de ejemplo que demuestra la estructura de metadatos
+      requerida para publicar en el repositorio Flatpak de Vladzur.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">com.example.app.desktop</launchable>
+
+  <url type="homepage">https://github.com/vladzur/vladzur-flathub</url>
+
+  <screenshots>
+    <screenshot type="default">
+      <!-- Reemplazar con URL real de screenshot -->
+      <image>https://via.placeholder.com/800x600.png?text=Example+App+Screenshot</image>
+      <caption>Vista principal de Example App</caption>
+    </screenshot>
+  </screenshots>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="1.0.0" date="2026-07-31">
+      <description>
+        <p>Versión inicial de ejemplo.</p>
+      </description>
+    </release>
+  </releases>
+</component>

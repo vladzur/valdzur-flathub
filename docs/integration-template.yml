@@ -1,0 +1,67 @@
+# Template de Integración para Pipelines de Apps
+
+# Copia este step en el workflow de CI/CD de tu aplicación Flatpak.
+# Reemplaza los valores de ejemplo con los tuyos.
+
+name: Publish to Vladzur Flatpak Repo
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  notify-flatpak-repo:
+    runs-on: ubuntu-latest
+    steps:
+      # -------------------------------------------------------------------
+      # NOTA: Este step asume que tu pipeline YA generó el archivo .flatpak
+      # y lo subió como release asset o a una URL pública accesible.
+      # -------------------------------------------------------------------
+
+      - name: Disparar deploy en vladzur-flathub
+        env:
+          APP_ID: "com.ejemplo.miapp"        # ← Reemplazar con tu App ID
+        run: |
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.VLADZUR_FLATHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/vladzur/vladzur-flathub/dispatches \
+            -d "{
+              \"event_type\": \"publish-flatpak\",
+              \"client_payload\": {
+                \"app_id\": \"$APP_ID\",
+                \"version\": \"${{ github.ref_name }}\",
+                \"download_url\": \"https://github.com/\${{ github.repository }}/releases/download/\${{ github.ref_name }}/\${APP_ID}.flatpak\"
+              }
+            }"
+```
+
+## Configuración necesaria
+
+### 1. Crear un Personal Access Token (PAT)
+
+En GitHub → Settings → Developer Settings → Personal access tokens → Fine-grained tokens:
+
+- **Repository access**: Solo este repo (`vladzur/vladzur-flathub`)
+- **Permissions**: `Contents: Read and Write`
+- **Expiration**: Según tu preferencia
+
+### 2. Añadir el token como secreto en tu repo
+
+En tu repo de la app → Settings → Secrets and variables → Actions → New repository secret:
+
+- **Nombre**: `VLADZUR_FLATHUB_TOKEN`
+- **Valor**: El PAT generado en el paso anterior
+
+### 3. Añadir metadatos AppStream en este repo
+
+Crea un PR en `vladzur/vladzur-flathub` añadiendo:
+
+```
+apps/com.ejemplo.miapp/
+├── assets/
+│   ├── com.ejemplo.miapp.metainfo.xml
+│   └── icon.svg
+```
+
+Esto solo se hace UNA vez por aplicación.

@@ -1,0 +1,53 @@
+{
+  "hosting": {
+    "public": "repo",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "headers": [
+      {
+        "source": "**/*.flatpak",
+        "headers": [
+          { "key": "Content-Type", "value": "application/vnd.flatpak" }
+        ]
+      },
+      {
+        "source": "summary",
+        "headers": [
+          { "key": "Content-Type", "value": "application/octet-stream" },
+          { "key": "Cache-Control", "value": "max-age=0, must-revalidate" }
+        ]
+      },
+      {
+        "source": "summary.sig",
+        "headers": [
+          { "key": "Content-Type", "value": "application/pgp-signature" },
+          { "key": "Cache-Control", "value": "max-age=0, must-revalidate" }
+        ]
+      },
+      {
+        "source": "**/*.xml",
+        "headers": [
+          { "key": "Content-Type", "value": "application/xml" }
+        ]
+      },
+      {
+        "source": "**/*.xml.gz",
+        "headers": [
+          { "key": "Content-Type", "value": "application/gzip" }
+        ]
+      },
+      {
+        "source": "repo-key.gpg",
+        "headers": [
+          { "key": "Content-Type", "value": "application/pgp-keys" },
+          { "key": "Cache-Control", "value": "max-age=3600" }
+        ]
+      }
+    ],
+    "cleanUrls": false,
+    "trailingSlash": false
+  }
+}

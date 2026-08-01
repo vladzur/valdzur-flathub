@@ -1,0 +1,27 @@
+# OSTree repo generado automáticamente
+repo/
+
+# Build artifacts y temporales
+build-dir/
+*.tar.gz
+*.tmp
+
+# Firebase
+.firebase/
+.firebase-debug.log
+
+# Secretos y claves (NUNCA committear)
+*.gpg.private
+gpg-private.key
+
+# IDE y sistema
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Dependencias
+node_modules/

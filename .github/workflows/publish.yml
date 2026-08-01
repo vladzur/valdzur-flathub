@@ -1,0 +1,214 @@
+name: Publish Flatpak
+
+# Despliega un .flatpak preconstruido al repositorio OSTree en Firebase Hosting.
+#
+# Activado por:
+#   - repository_dispatch (tipo: publish-flatpak) desde pipelines externos
+#   - workflow_dispatch (manual) para pruebas o deploys manuales
+
+on:
+  repository_dispatch:
+    types: [publish-flatpak]
+
+  workflow_dispatch:
+    inputs:
+      app_id:
+        description: 'App ID (ej: com.ejemplo.miapp)'
+        required: true
+        type: string
+      version:
+        description: 'Versión de la app (ej: 1.0.0)'
+        required: true
+        type: string
+      download_url:
+        description: 'URL de descarga del archivo .flatpak'
+        required: true
+        type: string
+
+jobs:
+  publish:
+    name: Importar y publicar flatpak
+    runs-on: ubuntu-22.04
+
+    steps:
+      # -------------------------------------------------------------------
+      # Paso 1: Checkout del repositorio
+      # -------------------------------------------------------------------
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      # -------------------------------------------------------------------
+      # Paso 2: Instalar dependencias del sistema
+      # -------------------------------------------------------------------
+      - name: Instalar dependencias (flatpak, ostree, gpg)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq flatpak flatpak-builder ostree
+          echo "Flatpak $(flatpak --version)"
+          echo "OSTree $(ostree --version)"
+
+      # -------------------------------------------------------------------
+      # Paso 3: Importar clave GPG para firmar el repositorio
+      # -------------------------------------------------------------------
+      - name: Importar clave GPG privada
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+        run: |
+          # Importar la clave privada desde el secreto
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+
+          # Verificar que la clave está disponible
+          if ! gpg --list-secret-keys "$GPG_KEY_ID" &>/dev/null; then
+            echo "ERROR: No se pudo importar la clave GPG. Verifica GPG_PRIVATE_KEY y GPG_KEY_ID"
+            exit 1
+          fi
+
+          echo "Clave GPG importada correctamente: $GPG_KEY_ID"
+
+      # -------------------------------------------------------------------
+      # Paso 4: Extraer parámetros del evento
+      # -------------------------------------------------------------------
+      - name: Extraer parámetros de publicación
+        id: params
+        env:
+          EVENT_PAYLOAD: ${{ toJson(github.event) }}
+        run: |
+          # Determinar si venimos de repository_dispatch o workflow_dispatch
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            APP_ID="${{ github.event.client_payload.app_id }}"
+            VERSION="${{ github.event.client_payload.version }}"
+            DOWNLOAD_URL="${{ github.event.client_payload.download_url }}"
+          else
+            APP_ID="${{ github.event.inputs.app_id }}"
+            VERSION="${{ github.event.inputs.version }}"
+            DOWNLOAD_URL="${{ github.event.inputs.download_url }}"
+          fi
+
+          # Validar que todos los parámetros están presentes
+          if [[ -z "$APP_ID" || -z "$VERSION" || -z "$DOWNLOAD_URL" ]]; then
+            echo "ERROR: Faltan parámetros requeridos (app_id, version, download_url)"
+            exit 1
+          fi
+
+          echo "app_id=$APP_ID" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "download_url=$DOWNLOAD_URL" >> "$GITHUB_OUTPUT"
+
+          echo "Parámetros recibidos:"
+          echo "  App ID:       $APP_ID"
+          echo "  Versión:      $VERSION"
+          echo "  Download URL: $DOWNLOAD_URL"
+
+      # -------------------------------------------------------------------
+      # Paso 5: Descargar el archivo .flatpak
+      # -------------------------------------------------------------------
+      - name: Descargar archivo .flatpak
+        env:
+          DOWNLOAD_URL: ${{ steps.params.outputs.download_url }}
+          APP_ID: ${{ steps.params.outputs.app_id }}
+          VERSION: ${{ steps.params.outputs.version }}
+        run: |
+          FLATPAK_FILE="${APP_ID}-${VERSION}.flatpak"
+
+          echo "Descargando desde: $DOWNLOAD_URL"
+          echo "Archivo destino:  $FLATPAK_FILE"
+
+          # Descargar con curl, seguir redirecciones, mostrar progreso
+          if curl -fSL --progress-bar -o "$FLATPAK_FILE" "$DOWNLOAD_URL"; then
+            echo "Descarga completada: $(du -h "$FLATPAK_FILE" | cut -f1)"
+          else
+            echo "ERROR: Fallo al descargar el archivo desde $DOWNLOAD_URL"
+            exit 1
+          fi
+
+          echo "flatpak_file=$FLATPAK_FILE" >> "$GITHUB_OUTPUT"
+
+      # -------------------------------------------------------------------
+      # Paso 6: Importar el .flatpak al repositorio OSTree
+      # -------------------------------------------------------------------
+      - name: Importar flatpak al repositorio OSTree
+        env:
+          APP_ID: ${{ steps.params.outputs.app_id }}
+        run: |
+          bash scripts/import-flatpak.sh "${{ steps.params.outputs.flatpak_file }}" "$APP_ID"
+
+      # -------------------------------------------------------------------
+      # Paso 7: Copiar metadatos AppStream (si existen)
+      # -------------------------------------------------------------------
+      - name: Copiar metadatos AppStream
+        env:
+          APP_ID: ${{ steps.params.outputs.app_id }}
+        run: |
+          APP_DIR="apps/${APP_ID}"
+
+          if [[ -d "$APP_DIR/assets" ]]; then
+            echo "Copiando assets de $APP_ID..."
+
+            # Crear directorios de appstream en el repo
+            mkdir -p repo/appstream/x86_64
+
+            # Copiar metainfo.xml si existe
+            if compgen -G "$APP_DIR/assets/*.metainfo.xml" > /dev/null; then
+              cp "$APP_DIR"/assets/*.metainfo.xml repo/appstream/x86_64/
+              echo "Metainfo copiado para $APP_ID"
+            fi
+
+            # Copiar iconos si existen
+            if compgen -G "$APP_DIR/assets/icon.*" > /dev/null; then
+              mkdir -p repo/appstream/x86_64/icons
+              cp "$APP_DIR"/assets/icon.* repo/appstream/x86_64/icons/
+              echo "Iconos copiados para $APP_ID"
+            fi
+          else
+            echo "No se encontraron assets en '$APP_DIR/assets'. Saltando metadatos."
+          fi
+
+      # -------------------------------------------------------------------
+      # Paso 8: Actualizar summary del repositorio y firmar con GPG
+      # -------------------------------------------------------------------
+      - name: Actualizar y firmar repositorio OSTree
+        env:
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+        run: |
+          bash scripts/update-repo.sh "$GPG_KEY_ID"
+
+      # -------------------------------------------------------------------
+      # Paso 9: Exportar clave pública GPG
+      # -------------------------------------------------------------------
+      - name: Exportar clave pública GPG
+        env:
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+        run: |
+          gpg --export --armor "$GPG_KEY_ID" > docs/repo-key.gpg
+          echo "Clave pública exportada a docs/repo-key.gpg"
+
+      # -------------------------------------------------------------------
+      # Paso 10: Deploy a Firebase Hosting
+      # -------------------------------------------------------------------
+      - name: Desplegar a Firebase Hosting
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: ${{ secrets.FIREBASE_PROJECT_ID }}
+          channelId: live
+          entryPoint: .
+        env:
+          FIREBASE_CLI_EXPERIMENTS: webframeworks
+
+      # -------------------------------------------------------------------
+      # Paso 11: Resumen del deploy
+      # -------------------------------------------------------------------
+      - name: Resumen del deploy
+        env:
+          APP_ID: ${{ steps.params.outputs.app_id }}
+          VERSION: ${{ steps.params.outputs.version }}
+        run: |
+          echo "=============================================="
+          echo "  Deploy completado exitosamente"
+          echo "=============================================="
+          echo "  App:       $APP_ID"
+          echo "  Versión:   $VERSION"
+          echo "  Repo URL:  https://${{ secrets.FIREBASE_PROJECT_ID }}.web.app"
+          echo "=============================================="
