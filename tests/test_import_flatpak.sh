@@ -144,14 +144,28 @@ test_has_required_functions() {
     fi
 }
 
-test_uses_correct_ostree_ref_format() {
-    echo "[Test] Usa el formato correcto de ref OSTree"
+test_uses_dynamic_ref_detection() {
+    echo "[Test] Detecta dinámicamente el ref después de importar"
 
-    if grep -q "app/\${APP_ID}/\${ARCH}/\${BRANCH}" "$SCRIPT" || \
-       grep -q 'app/${APP_ID}/${ARCH}/${BRANCH}' "$SCRIPT"; then
-        pass "El ref sigue el formato app/{app_id}/{arch}/{branch}"
+    # Verificar que ya no hardcodea BRANCH="stable"
+    if ! grep -q 'readonly BRANCH=' "$SCRIPT"; then
+        pass "No hardcodea BRANCH (usa detección dinámica)"
     else
-        fail "El ref NO sigue el formato esperado"
+        fail "Todavía hardcodea BRANCH, debería usar detección dinámica"
+    fi
+
+    # Verificar que usa ostree refs para detectar el ref
+    if grep -q 'ostree refs' "$SCRIPT"; then
+        pass "Usa 'ostree refs' para detectar refs"
+    else
+        fail "No usa 'ostree refs' para detectar refs"
+    fi
+
+    # Verificar que usa REF_PREFIX dinámico
+    if grep -q 'REF_PREFIX' "$SCRIPT"; then
+        pass "Usa REF_PREFIX para construir el patrón de búsqueda"
+    else
+        fail "No usa REF_PREFIX"
     fi
 }
 
@@ -173,7 +187,7 @@ main() {
     test_rejects_wrong_extension
     test_accepts_valid_flatpak_extension
     test_has_required_functions
-    test_uses_correct_ostree_ref_format
+    test_uses_dynamic_ref_detection
 
     echo ""
     echo "=============================================="

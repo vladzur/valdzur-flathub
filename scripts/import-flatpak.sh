@@ -5,7 +5,7 @@
 # Uso:
 #   ./import-flatpak.sh <ruta-al-archivo.flatpak> <app-id>
 #
-# El ref OSTree generado siempre será: app/<app-id>/x86_64/stable
+# El ref OSTree se determina automáticamente a partir del bundle importado.
 # ---------------------------------------------------------------------------
 
 set -euo pipefail
@@ -13,7 +13,6 @@ set -euo pipefail
 # --- Constantes ------------------------------------------------------------
 readonly REPO_DIR="repo"
 readonly ARCH="x86_64"
-readonly BRANCH="stable"
 
 # --- Funciones de log (español) --------------------------------------------
 log_info()  { echo "[INFO]  $*"; }
@@ -64,24 +63,47 @@ if [[ ! -d "$REPO_DIR" ]]; then
 fi
 
 # --- Importar el flatpak al repositorio OSTree -----------------------------
-readonly OSTREE_REF="app/${APP_ID}/${ARCH}/${BRANCH}"
+# Guardar los refs actuales para detectar cuáles se crean nuevos
+readonly REFS_BEFORE=$(ostree refs --repo="$REPO_DIR" 2>/dev/null | sort || true)
 
 log_info "Importando '$FLATPAK_FILE' al repositorio OSTree..."
 log_info "  App ID:   $APP_ID"
-log_info "  Ref:      $OSTREE_REF"
 
 if flatpak build-import-bundle "$REPO_DIR" "$FLATPAK_FILE" 2>&1; then
-    log_ok "Flatpak importado correctamente en ref '$OSTREE_REF'"
+    log_ok "Flatpak importado correctamente."
 else
     log_error "Fallo al importar el flatpak bundle."
     exit 1
 fi
 
-# --- Verificar que el ref se creó correctamente ----------------------------
-if ostree --repo="$REPO_DIR" show "$OSTREE_REF" &>/dev/null; then
-    log_ok "Ref '$OSTREE_REF' verificado en el repositorio OSTree."
+# --- Detectar el ref creado durante la importación -------------------------
+# El bundle puede venir con cualquier branch (master, stable, beta, etc.).
+# Buscamos el ref que coincide con app/{app_id}/{arch}/*
+readonly REFS_AFTER=$(ostree refs --repo="$REPO_DIR" 2>/dev/null | sort)
+readonly REF_PREFIX="app/${APP_ID}/${ARCH}/"
+
+# Encontrar refs nuevos que empiecen con el prefijo esperado
+IMPORTED_REF=$(comm -13 <(echo "$REFS_BEFORE") <(echo "$REFS_AFTER") | grep "^${REF_PREFIX}" | head -1)
+
+if [[ -z "$IMPORTED_REF" ]]; then
+    # Si no se detectó como nuevo, buscar entre todos los refs
+    IMPORTED_REF=$(echo "$REFS_AFTER" | grep "^${REF_PREFIX}" | head -1)
+fi
+
+if [[ -z "$IMPORTED_REF" ]]; then
+    log_error "No se encontró ningún ref con prefijo '$REF_PREFIX' después de la importación."
+    log_error "Refs disponibles en el repositorio:"
+    ostree refs --repo="$REPO_DIR" 2>/dev/null || true
+    exit 1
+fi
+
+log_info "Ref detectado: $IMPORTED_REF"
+
+# --- Verificar que el ref detectado es válido ------------------------------
+if ostree --repo="$REPO_DIR" show "$IMPORTED_REF" &>/dev/null; then
+    log_ok "Ref '$IMPORTED_REF' verificado en el repositorio OSTree."
 else
-    log_error "No se pudo verificar el ref '$OSTREE_REF' después de la importación."
+    log_error "No se pudo verificar el ref '$IMPORTED_REF' después de la importación."
     exit 1
 fi
 
